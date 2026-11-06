@@ -214,6 +214,9 @@ select{font:400 15px var(--body);color:var(--ink)}
 .lnet.neg{color:var(--red)}
 #loanDone summary{padding:8px 0}
 .lpay input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:14px}
+.eyerow{display:flex;justify-content:flex-end;margin-bottom:-18px}
+.eye{border:0;background:none;color:var(--muted);cursor:pointer;padding:6px 8px;border-radius:50%;display:grid;place-items:center}
+.eye:hover{background:var(--surface);color:var(--ink)}
 </style>
 
 <main>
@@ -231,6 +234,7 @@ select{font:400 15px var(--body);color:var(--ink)}
     </div>
   </div>
 
+  <div class="eyerow"><button type="button" class="eye" id="formToggle"></button></div>
   <form class="quick" id="form" aria-label="Nauja išlaida">
     <div class="qrow">
       <input id="amount" inputmode="decimal" placeholder="0,00" aria-label="Suma, eurais" required autocomplete="off">
@@ -611,7 +615,7 @@ function render(){
     else dp.insertAdjacentHTML('beforeend','<div class="empty" style="padding-top:10px">Šią dieną išlaidų nėra.</div>');
     dp.querySelector('.dclose').onclick=()=>{selDay=null;render()};
     const ab=document.createElement('button');ab.type='button';ab.className='ghost addday';ab.textContent='+ Pridėti išlaidą šiai dienai';
-    ab.onclick=()=>{$('date').value=selDay;$('form').scrollIntoView({behavior:'smooth',block:'start'});$('amount').focus({preventScroll:true});$('qHint').textContent='Data nustatyta pagal pasirinktą dieną. Įveskite sumą ir paspauskite „Pridėti“.'};
+    ab.onclick=()=>{if(formHidden){formHidden=false;wr('islaidos-formhidden',false);applyForm()}$('date').value=selDay;$('form').scrollIntoView({behavior:'smooth',block:'start'});$('amount').focus({preventScroll:true});$('qHint').textContent='Data nustatyta pagal pasirinktą dieną. Įveskite sumą ir paspauskite „Pridėti“.'};
     dp.appendChild(ab);
     dp.hidden=false;
   }else dp.hidden=true;
@@ -877,6 +881,12 @@ $('loanForm').onsubmit=e=>{
   loans.push({id:uid(),who,dir:loanDir,cents:c,date:$('loanDate').value||TODAY,note:$('loanNote').value.trim(),pays:[]});save();
   $('loanName').value='';$('loanAmt').value='';$('loanNote').value='';drawLoans();
 };
+const EYE='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg>';
+let formHidden=!!rd('islaidos-formhidden',false);
+function applyForm(){$('form').hidden=formHidden;$('formToggle').innerHTML=formHidden?EYE_OFF:EYE;$('formToggle').setAttribute('aria-label',formHidden?'Rodyti išlaidų įvedimo formą':'Slėpti išlaidų įvedimo formą');$('formToggle').setAttribute('aria-pressed',String(formHidden))}
+$('formToggle').onclick=()=>{formHidden=!formHidden;wr('islaidos-formhidden',formHidden);applyForm()};
+applyForm();
 let listHidden=!!rd('islaidos-listhidden',false);
 $('listToggle').onclick=()=>{listHidden=!listHidden;wr('islaidos-listhidden',listHidden);render()};
 let bmode='month';
