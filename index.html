@@ -236,11 +236,14 @@ select{font:400 15px var(--body);color:var(--ink)}
 
   <div class="eyerow"><button type="button" class="eye" id="formToggle"></button></div>
   <form class="quick" id="form" aria-label="Nauja išlaida">
+    <div class="pay" id="kind" role="group" aria-label="Rūšis" style="align-self:flex-start"><button type="button" data-k="exp" aria-pressed="true">Išlaida</button><button type="button" data-k="inc" aria-pressed="false">Pajamos</button></div>
     <div class="qrow">
       <input id="amount" inputmode="decimal" placeholder="0,00" aria-label="Suma, eurais" required autocomplete="off">
       <input class="fld" id="note" placeholder="Kur išleidote?" maxlength="60" aria-label="Aprašymas" autocomplete="off">
     </div>
     <div class="tiles" id="chips" role="group" aria-label="Kategorija"></div>
+    <div class="tiles" id="ichips" role="group" aria-label="Pajamų pavyzdžiai" hidden></div>
+    <div class="pay" id="ipay" role="group" aria-label="Kaip gavote" hidden style="align-self:flex-start"><button type="button" data-p="saskaita" aria-pressed="true">Į sąskaitą</button><button type="button" data-p="grynais" aria-pressed="false">Grynais</button><button type="button" data-p="bankomatas" aria-pressed="false">Įsidėjau bankomate</button></div>
     <button type="button" class="tlink" id="catManage" style="align-self:flex-start;padding-left:0">Tvarkyti kategorijas</button>
     <div class="ledit catedit" id="catEdit" hidden>
       <span class="cap">Šio skyriaus kategorijos</span>
@@ -272,6 +275,14 @@ select{font:400 15px var(--body);color:var(--ink)}
     <div class="stat"><input id="budget" inputmode="decimal" placeholder="—" aria-label="Šio mėnesio biudžetas, eurais"><span class="cap" id="budCap">Biudžetas €</span></div>
     <div class="stat"><span class="v" id="s2">—</span><span class="cap" id="s2c">Liko</span></div>
     <div class="stat"><span class="v" id="s3">—</span><span class="cap" id="s3c">Per dieną</span></div>
+  </section>
+
+  <section class="blk" id="incSec" hidden>
+    <div class="stats" style="grid-template-columns:repeat(2,1fr)">
+      <div class="stat"><span class="v" id="incGot">—</span><span class="cap">Gauta šį mėnesį</span></div>
+      <div class="stat"><span class="v" id="incBal">—</span><span class="cap">Likutis (gauta − išleista)</span></div>
+    </div>
+    <details id="incList"><summary class="cap" style="cursor:pointer">Pajamų sąrašas</summary><ul id="incUl"></ul></details>
   </section>
 
   <section class="blk">
@@ -373,12 +384,12 @@ const rd=(k,f)=>{try{const s=localStorage.getItem(k);return s?JSON.parse(s):f}ca
 const wr=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const now=new Date(),TODAY=iso(now);
 let uidn=0;const uid=()=>Date.now()+(++uidn)/1000;
-let ledgers,active,items,recurring,merch,loans;
+let ledgers,active,items,recurring,merch,loans,incomes;
 let cat='maistas',rcat='namai',pay='kortele',filter=null,selDay=null,view=rd('islaidos-view','chart'),vy=now.getFullYear(),vm=now.getMonth();
 
 (function init(){
   const S=rd(SKEY,null);
-  if(S&&Array.isArray(S.ledgers)&&S.ledgers.length){({ledgers,active,items,recurring,merch,loans}=S);recurring=recurring||[];merch=merch||{};loans=loans||[];return}
+  if(S&&Array.isArray(S.ledgers)&&S.ledgers.length){({ledgers,active,items,recurring,merch,loans,incomes}=S);recurring=recurring||[];merch=merch||{};loans=loans||[];incomes=incomes||[];return}
   const old=rd('islaidos-v1',null);
   if(old){ledgers=[{id:'p',name:'Asmeninės',budget:rd('islaidos-budget-v1',0)||0,budgets:{}},{id:'v',name:'Verslas',budget:0,budgets:{}}];active='p';
     items=old.map(e=>({...e,ledger:'p'}));recurring=[];merch=rd('islaidos-merch-v1',{});return}
@@ -393,11 +404,12 @@ let cat='maistas',rcat='namai',pay='kortele',filter=null,selDay=null,view=rd('is
     {ledger:'v',date:day(4),cents:6000,cat:'transportas',note:'Kuras'}
   ].map((e,i)=>({...e,id:i+1,ex:true}));
 })();
-const save=()=>wr(SKEY,{ledgers,active,items,recurring,merch,loans});
+const save=()=>wr(SKEY,{ledgers,active,items,recurring,merch,loans,incomes});
 const led=()=>ledgers.find(l=>l.id===active)||ledgers[0];
 function fixLedgers(){ledgers.forEach(l=>{if(!Array.isArray(l.cats)||!l.cats.length)l.cats=defCats()})}
 fixLedgers();
 loans=loans||[];
+incomes=incomes||[];
 const cats=()=>led().cats;
 const catOf=id=>cats().find(c=>c.id===id)||FALL;
 const cid=id=>catOf(id).id;
@@ -458,7 +470,7 @@ $('ledName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault
 $('ledDel').onclick=()=>{
   const b=$('ledDel');
   if(!b.dataset.sure){b.dataset.sure='1';b.textContent='Tikrai ištrinti? Paspauskite dar kartą';return}
-  const id=active;ledgers=ledgers.filter(l=>l.id!==id);items=items.filter(e=>e.ledger!==id);recurring=recurring.filter(r=>r.ledger!==id);
+  const id=active;ledgers=ledgers.filter(l=>l.id!==id);items=items.filter(e=>e.ledger!==id);recurring=recurring.filter(r=>r.ledger!==id);incomes=incomes.filter(e=>e.ledger!==id);
   active=ledgers[0].id;filter=null;selDay=null;$('ledEdit').hidden=true;save();drawTabs();render();
 };
 function drawChips(box,sel,set){
@@ -605,6 +617,25 @@ function render(){
     $('s2').textContent=fmt0(total);$('s2c').textContent='Iš viso';
     $('s3').textContent=fmt0(total/(isCur?now.getDate():dim));$('s3c').textContent='Per dieną';
   }
+  const minc=incomes.filter(e=>e.ledger===L.id&&e.date.startsWith(key)).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  $('incSec').hidden=!minc.length;
+  if(minc.length){
+    const got=minc.filter(e=>e.date<=TODAY).reduce((s,e)=>s+e.cents,0),bal=got-total;
+    $('incGot').textContent=fmt(got);$('incBal').textContent=(bal>0?'+':bal<0?'−':'')+fmt(Math.abs(bal));
+    $('incBal').style.color=bal<0?'var(--red)':'var(--green)';
+    $('incList').querySelector('summary').textContent=`Pajamų sąrašas (${minc.length})`;
+    const ul=$('incUl');ul.innerHTML='';
+    minc.forEach((e,i)=>{
+      const li=document.createElement('li');li.style.setProperty('--i',i);li.style.setProperty('--c','var(--green)');
+      li.innerHTML='<i></i><div class="ib"><b></b><small></small></div><span class="amt"></span><button class="del" aria-label="Ištrinti">✕</button>';
+      li.querySelector('b').textContent=e.note;
+      const p=e.date.split('-').map(Number);
+      li.querySelector('small').textContent=new Date(p[0],p[1]-1,p[2]).toLocaleDateString('lt-LT',{month:'long',day:'numeric'})+(e.pay==='grynais'?' · grynais':e.pay==='bankomatas'?' · įsidėta bankomate':e.pay==='saskaita'?' · į sąskaitą':'')+(e.date>TODAY?' · numatyta':'');
+      li.querySelector('.amt').textContent='+'+fmt(e.cents);
+      li.querySelector('.del').onclick=()=>{incomes=incomes.filter(x=>x!==e);save();render()};
+      ul.appendChild(li);
+    });
+  }
   [...$('viewSw').children].forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===view));
   $('chart').innerHTML=view==='cal'?calendar(mine.filter(e=>e.date.startsWith(key)),dim):chart(mi,dim,isCur,bc);
   const dp=$('dayPanel');
@@ -668,7 +699,7 @@ function render(){
     rl.appendChild(li);
   });
   $('foot').textContent=hasEx()?'Pavyzdinės išlaidos, išsitrins pridėjus savo':'Duomenys saugomi tik šiame telefone';
-  $('backup').value=JSON.stringify({ledgers,active,items,recurring,merch,loans});
+  $('backup').value=JSON.stringify({ledgers,active,items,recurring,merch,loans,incomes});
   drawLoans();
 }
 $('fchip').onclick=()=>{filter=null;render()};
@@ -685,6 +716,7 @@ $('paste').addEventListener('input',()=>{
 $('form').onsubmit=e=>{
   e.preventDefault();const c=toCents($('amount').value);
   if(!(c>0)){$('amount').focus();return}
+  if(kind==='inc'){addIncome(c);return}
   purge();
   const note=$('note').value.trim();
   if(note){merch[active+'|'+note.toLowerCase()]=cat}
@@ -721,7 +753,7 @@ $('restore').onclick=()=>{
   const h=$('backupHint');
   try{
     const d=JSON.parse($('backup').value);if(!Array.isArray(d.ledgers)||!Array.isArray(d.items)||!d.ledgers.length)throw 0;
-    ledgers=d.ledgers;active=d.active&&ledgers.some(l=>l.id===d.active)?d.active:ledgers[0].id;items=d.items;recurring=d.recurring||[];merch=d.merch||{};loans=d.loans||[];
+    ledgers=d.ledgers;active=d.active&&ledgers.some(l=>l.id===d.active)?d.active:ledgers[0].id;items=d.items;recurring=d.recurring||[];merch=d.merch||{};loans=d.loans||[];incomes=d.incomes||[];
     fixLedgers();selDay=null;save();drawTabs();render();h.textContent='Atkurta.';
   }catch(e){h.textContent='Tekstas neatrodo kaip atsarginė kopija.'}
 };
@@ -853,7 +885,7 @@ function loanRow(l){
   return li;
 }
 function drawLoans(){
-  $('backup').value=JSON.stringify({ledgers,active,items,recurring,merch,loans});
+  $('backup').value=JSON.stringify({ledgers,active,items,recurring,merch,loans,incomes});
   const open=loans.filter(l=>loanBal(l)>0),done=loans.filter(l=>loanBal(l)<=0);
   const toMe=open.filter(l=>l.dir==='out').reduce((a,l)=>a+loanBal(l),0),fromMe=open.filter(l=>l.dir==='in').reduce((a,l)=>a+loanBal(l),0);
   const parts=[];if(toMe)parts.push(`jums skolingi ${fmt(toMe)}`);if(fromMe)parts.push(`jūs skolinga ${fmt(fromMe)}`);
@@ -887,6 +919,28 @@ let formHidden=!!rd('islaidos-formhidden',false);
 function applyForm(){$('form').hidden=formHidden;$('formToggle').innerHTML=formHidden?EYE_OFF:EYE;$('formToggle').setAttribute('aria-label',formHidden?'Rodyti išlaidų įvedimo formą':'Slėpti išlaidų įvedimo formą');$('formToggle').setAttribute('aria-pressed',String(formHidden))}
 $('formToggle').onclick=()=>{formHidden=!formHidden;wr('islaidos-formhidden',formHidden);applyForm()};
 applyForm();
+let kind='exp',ipay='saskaita';
+$('ipay').onclick=e=>{const b=e.target.closest('button');if(b){ipay=b.dataset.p;[...$('ipay').children].forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.p===ipay)))}};
+const IS=['Atlyginimas','Dovana','Premija','Grąžinimas','Kita'];
+function drawIChips(){const box=$('ichips');box.innerHTML='';IS.forEach(n=>{const b=document.createElement('button');b.type='button';b.className='tile';b.style.setProperty('--c','var(--green)');b.innerHTML='<i></i>';b.appendChild(document.createTextNode(n));b.setAttribute('aria-pressed',String($('note').value.trim()===n));b.onclick=()=>{$('note').value=n;drawIChips()};box.appendChild(b)})}
+function applyKind(){
+  const inc=kind==='inc';
+  $('chips').hidden=inc;$('catManage').hidden=inc;if(inc)$('catEdit').hidden=true;$('pay').hidden=inc;document.querySelector('.pastew').hidden=inc;$('ichips').hidden=!inc;$('ipay').hidden=!inc;
+  $('note').placeholder=inc?'Iš ko gavote?':'Kur išleidote?';
+  $('form').querySelector('.go').textContent=inc?'Pridėti pajamas':'Pridėti';
+  [...$('kind').children].forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===kind)));
+  if(inc)drawIChips();
+}
+$('kind').onclick=e=>{const b=e.target.closest('button');if(b){kind=b.dataset.k;applyKind()}};
+$('note').addEventListener('input',()=>{if(kind==='inc')drawIChips()});
+function addIncome(c){
+  const note=$('note').value.trim()||'Pajamos',dt=$('date').value||TODAY;
+  incomes.push({id:uid(),ledger:active,date:dt,cents:c,note,pay:ipay});save();
+  if(dt<=TODAY){const [y,m]=dt.split('-').map(Number);vy=y;vm=m-1}
+  $('amount').value='';$('note').value='';$('date').value=TODAY;
+  $('qHint').textContent='Pajamos pridėtos.';render();if(kind==='inc')drawIChips();
+}
+applyKind();
 let listHidden=!!rd('islaidos-listhidden',false);
 $('listToggle').onclick=()=>{listHidden=!listHidden;wr('islaidos-listhidden',listHidden);render()};
 let bmode='month';
