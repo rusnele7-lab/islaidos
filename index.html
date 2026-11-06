@@ -281,7 +281,7 @@ select{font:400 15px var(--body);color:var(--ink)}
   <section class="blk cats" id="cats"></section>
 
   <section>
-    <div class="listhead"><span class="cap">Išlaidos</span><button class="fchip" id="fchip" hidden></button></div>
+    <div class="listhead"><span class="cap">Išlaidos</span><span style="display:flex;gap:10px;align-items:center"><button class="fchip" id="fchip" hidden></button><button type="button" class="tlink" id="listToggle">Slėpti sąrašą</button></span></div>
     <div id="days"></div>
   </section>
 
@@ -313,8 +313,8 @@ select{font:400 15px var(--body);color:var(--ink)}
     <span class="cap">Įklijuoti išlaidų sąrašą</span>
     <div class="hint" style="min-height:0">Po vieną išlaidą eilutėje, pavyzdžiui „100€ degalai“. Eilutė „Iš viso“ atskiria sąrašus ir leidžia patikrinti sumą. Prieš pridedant pamatysite viską ir galėsite pataisyti.</div>
     <textarea id="bulk" rows="6" aria-label="Išlaidų sąrašas" placeholder="100€ degalai&#10;86,05€ maistas&#10;540€ nuoma -326,20€&#10;&#10;Iš viso: 726,05€"></textarea>
-    <div class="qrow"><input class="fld" id="bdate" type="date" aria-label="Visų išlaidų data" style="flex:0 1 170px;width:auto"><button type="button" class="ghost" id="bulkParse">Atpažinti</button></div>
-    <div class="hint" style="min-height:0">Data galioja visoms išlaidoms iš sąrašo.</div>
+    <div class="qrow"><div class="pay" id="bmode" role="group" aria-label="Laikotarpis"><button type="button" data-m="month" aria-pressed="true">Visam mėnesiui</button><button type="button" data-m="day" aria-pressed="false">Konkrečiai dienai</button></div><input class="fld" id="bmonth" type="month" placeholder="2026-10" aria-label="Mėnuo" style="flex:0 1 160px;width:auto"><input class="fld" id="bdate" type="date" aria-label="Visų išlaidų data" style="flex:0 1 160px;width:auto" hidden><button type="button" class="ghost" id="bulkParse">Atpažinti</button></div>
+    <div class="hint" style="min-height:0" id="bhint"></div>
     <div id="bulkOut" style="display:flex;flex-direction:column;gap:12px"></div>
     <div class="hint ok" id="bulkMsg"></div>
   </section>
@@ -635,7 +635,7 @@ function render(){
   }
   const shown=filter?mi.filter(e=>cid(e.cat)===filter):mi;
   $('fchip').hidden=!filter;if(filter)$('fchip').textContent=cname(filter)+'  ✕';
-  const days=$('days');days.innerHTML='';
+  const days=$('days');days.innerHTML='';days.hidden=listHidden;$('listToggle').textContent=listHidden?'Rodyti sąrašą':'Slėpti sąrašą';
   if(!shown.length)days.innerHTML='<div class="empty">Pridėkite pirmą išlaidą formoje viršuje.</div>';
   const groups={};shown.forEach(e=>(groups[e.date]=groups[e.date]||[]).push(e));
   let i=0;
@@ -784,7 +784,16 @@ function drawImport(){
       am.oninput=()=>{r.amt=am.value;r.on=toCents(am.value)>0;cb.checked=r.on;impUpdate()};
       const cs=document.createElement('select');cs.className='fld';cs.setAttribute('aria-label','Kategorija');
       ledgerById(b.ledger).cats.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name;if(c.id===r.cat)o.selected=true;cs.appendChild(o)});
-      cs.onchange=()=>{r.cat=cs.value};
+      const no=document.createElement('option');no.value='__new';no.textContent='+ Nauja kategorija…';cs.appendChild(no);
+      cs.onchange=()=>{
+        if(cs.value!=='__new'){r.cat=cs.value;return}
+        const w=document.createElement('div');w.className='cedit';w.style.gridColumn='2/4';
+        const ni=document.createElement('input');ni.placeholder='Naujos kategorijos pavadinimas';ni.maxLength=24;ni.setAttribute('aria-label','Nauja kategorija');
+        const nb=document.createElement('button');nb.type='button';nb.className='ghost';nb.textContent='Sukurti';
+        const make=()=>{const v=ni.value.trim();if(!v)return;const L=ledgerById(b.ledger),used=L.cats.map(c=>c.color),color=PAL.find(p=>!used.includes(p))||PAL[L.cats.length%PAL.length],id='c'+Date.now();L.cats.push({id,name:v,color});r.cat=id;save();drawImport()};
+        nb.onclick=make;ni.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();make()}else if(e.key==='Escape'){w.remove();cs.value=r.cat}});
+        w.append(ni,nb);row.appendChild(w);ni.focus();
+      };
       row.append(cb,nm,am,cs);
       if(r.ded){const h=document.createElement('div');h.className='hint';h.textContent=`${fmtN(r.gross)} − ${fmtN(r.ded)} = ${fmtN(r.gross-r.ded)}`;row.appendChild(h)}
       card.appendChild(row);
@@ -797,7 +806,7 @@ function drawImport(){
   impUpdate();
 }
 function doImport(){
-  const dt=$('bdate').value||TODAY,per={};let n=0;
+  const dt=importDate(),per={};let n=0;
   purge();
   imp.blocks.forEach(b=>b.rows.forEach(r=>{
     const c=toCents(r.amt);if(!r.on||!(c>0))return;const nm=r.note.trim();
@@ -868,6 +877,17 @@ $('loanForm').onsubmit=e=>{
   loans.push({id:uid(),who,dir:loanDir,cents:c,date:$('loanDate').value||TODAY,note:$('loanNote').value.trim(),pays:[]});save();
   $('loanName').value='';$('loanAmt').value='';$('loanNote').value='';drawLoans();
 };
+let listHidden=!!rd('islaidos-listhidden',false);
+$('listToggle').onclick=()=>{listHidden=!listHidden;wr('islaidos-listhidden',listHidden);render()};
+let bmode='month';
+function bmodeUI(){[...$('bmode').children].forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===bmode));$('bmonth').hidden=bmode!=='month';$('bdate').hidden=bmode!=='day';$('bhint').textContent=bmode==='month'?'Visos išlaidos bus įrašytos mėnesio paskutinę dieną (šį mėnesį – šiandien).':'Visos išlaidos bus įrašytos pasirinktą dieną.'}
+$('bmode').onclick=e=>{const b=e.target.closest('button');if(b){bmode=b.dataset.m;bmodeUI()}};
+function importDate(){
+  if(bmode==='day')return $('bdate').value||TODAY;
+  const v=$('bmonth').value||TODAY.slice(0,7),[y,m]=v.split('-').map(Number);
+  let d=iso(new Date(y,m,0));if(d>TODAY&&y===now.getFullYear()&&m-1===now.getMonth())d=TODAY;return d;
+}
+$('bmonth').value=TODAY.slice(0,7);bmodeUI();
 $('loanDate').value=TODAY;
 $('bdate').value=TODAY;
 $('date').value=TODAY;
